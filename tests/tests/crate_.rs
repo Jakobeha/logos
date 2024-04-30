@@ -3,6 +3,7 @@ use tests::assert_lex;
 
 mod some {
     pub mod path {
+        #[allow(unused_imports)]
         pub use logos as _logos;
     }
 }

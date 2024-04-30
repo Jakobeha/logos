@@ -87,12 +87,13 @@ pub trait Logos<'source>: Sized {
 /// use logos::{Logos, Skip};
 ///
 /// #[derive(Logos, Debug, PartialEq)]
+/// // The below annotation causes the lexer to treat "abc" as if it was whitespace.
+/// // It is identical to:
+/// // - `#[logos(skip " |abc", priority = 3)]`
+/// // - `#[regex(" |abc", logos::skip, priority = 3)]`
+/// // - `#[regex(" |abc", priority = 3)]`
+/// #[regex(" |abc", |_| Skip, priority = 3)]
 /// enum Token<'a> {
-///     // We will treat "abc" as if it was whitespace.
-///     // This is identical to using `logos::skip`.
-///     #[regex(" |abc", |_| Skip, priority = 3)]
-///     Ignored,
-///
 ///     #[regex("[a-zA-Z]+")]
 ///     Text(&'a str),
 /// }
@@ -118,10 +119,8 @@ pub struct Skip;
 /// use logos::{Logos, Filter};
 ///
 /// #[derive(Logos, Debug, PartialEq)]
+/// #[regex(r"[ \n\f\t]+")]
 /// enum Token {
-///     #[regex(r"[ \n\f\t]+", logos::skip)]
-///     Ignored,
-///
 ///     #[regex("[0-9]+", |lex| {
 ///         let n: u64 = lex.slice().parse().unwrap();
 ///
@@ -155,6 +154,98 @@ pub enum Filter<T> {
     Skip,
 }
 
+/// Type that can be returned from a callback, informing the lexer, to either skip the match or
+/// emit an error (never emit this token).
+///
+/// # Example
+///
+/// ```rust
+/// use std::cmp::Ordering;
+/// use logos::{Logos, Lexer, FilterSkip};
+///
+/// #[derive(Debug, PartialEq, Clone, Default)]
+/// enum LexingError {
+///     UnclosedBlockComment,
+///     #[default]
+///     Other
+/// }
+///
+/// #[derive(Logos, Debug, PartialEq)]
+/// #[logos(error = LexingError)]
+/// // Skip whitespace
+/// #[regex(r"[ \n\f\t]+")]
+/// // Skip OCaml-style nested block comments
+/// #[regex(r"\(*", skip_block_comment)]
+/// enum Token<'a> {
+///     // Lex words
+///     #[regex(r"\w+")]
+///     Word(&'a str),
+/// }
+///
+/// fn skip_block_comment<'s>(lex: &mut Lexer<'s, Token<'s>>) -> FilterSkip<LexingError> {
+///     let mut nest_level = 1;
+///     while nest_level > 0 {
+///         let opener_idx = lex.remainder().find("(*").unwrap_or(usize::MAX);
+///         let closer_idx = lex.remainder().find("*)").unwrap_or(usize::MAX);
+///         // This part is rather obfuscated.
+///         let offset = match opener_idx.cmp(&closer_idx) {
+///             Ordering::Less => {
+///                 // This block is reached when we encounter "(*" at "opener_idx".
+///                 // Ignore that we've also searched for "*)", we'll encounter and handle it later.
+///                 nest_level += 1;
+///                 // Remember to skip past the "(*" (2 bytes).
+///                 opener_idx + 2
+///             }
+///             Ordering::Greater => {
+///                 // This block is reached when we encounter "*)" at "closer_idx".
+///                 // Ignore that we've also searched for "(*", we'll encounter and handle it later
+///                 // if still in the block.
+///                 nest_level -= 1;
+///                 // Remember to skip past the "*)" (2 bytes).
+///                 closer_idx + 2
+///             }
+///             Ordering::Equal => {
+///                 // This block is reached when there are no more "(*" and "*)"s in the source, but
+///                 // the block comment is still open. If the block comment closed (maybe there are
+///                 // more "(*"s and "*)"s, maybe not), we would've exited at the `while` condition
+///                 // because `nest_level` would've been 0.
+///                 debug_assert_eq!(opener_idx, usize::MAX);
+///                 // Extend the position in case we want to report the span of the error.
+///                 lex.bump(lex.remainder().len());
+///                 return FilterSkip::Error(LexingError::UnclosedBlockComment);
+///             }
+///         };
+///         // Extend the current span to cover the lexed text, so that the next iteration (if
+///         // still in the comment) encounters the next opener or closer.
+///         lex.bump(offset);
+///     }
+///     FilterSkip::Skip
+/// }
+///
+/// let tokens: Vec<_> = Token::lexer(
+///     "foo bar (* comment (* nested *) still comment *) baz (* unclosed comment"
+/// ).collect();
+///
+/// assert_eq!(
+///     tokens,
+///     &[
+///         Ok(Token::Word("foo")),
+///         // skips whitespace
+///         Ok(Token::Word("bar")),
+///         // skips words in comment, handling nesting
+///         Ok(Token::Word("baz")),
+///         // comment produces an error because it's not closed
+///         Err(LexingError::UnclosedBlockComment),
+///     ]
+/// );
+/// ```
+pub enum FilterSkip<E> {
+    /// Skip current match, analog to [`Skip`](./struct.Skip.html).
+    Skip,
+    /// Emit a `<Token as Logos>::ERROR` token.
+    Error(E),
+}
+
 /// Type that can be returned from a callback, either producing a field
 /// for a token, skipping it, or emitting an error.
 ///
@@ -179,10 +270,8 @@ pub enum Filter<T> {
 ///
 /// #[derive(Logos, Debug, PartialEq)]
 /// #[logos(error = LexingError)]
+/// #[logos(skip r"[ \n\f\t]+")]
 /// enum Token {
-///     #[regex(r"[ \n\f\t]+", logos::skip)]
-///     Ignored,
-///
 ///     #[regex("[0-9]+", |lex| {
 ///         let n: u64 = lex.slice().parse().unwrap();
 ///
@@ -233,11 +322,9 @@ pub enum FilterResult<T, E> {
 /// use logos::Logos;
 ///
 /// #[derive(Logos, Debug, PartialEq)]
+/// // We will treat "abc" as if it was whitespace
+/// #[regex(" |abc", priority = 3)]
 /// enum Token<'a> {
-///     // We will treat "abc" as if it was whitespace
-///     #[regex(" |abc", logos::skip, priority = 3)]
-///     Ignored,
-///
 ///     #[regex("[a-zA-Z]+")]
 ///     Text(&'a str),
 /// }

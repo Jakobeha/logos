@@ -96,10 +96,8 @@ impl<'source, Token: Logos<'source>> Lexer<'source, Token> {
     ///
     /// #[derive(Logos, Debug, PartialEq)]
     /// #[logos(error = LexingError)]
+    /// #[regex(r"[ \n\t\f]+")]
     /// enum Example {
-    ///     #[regex(r"[ \n\t\f]+", logos::skip)]
-    ///     Ignored,
-    ///
     ///     #[regex("-?[0-9]+", |lex| lex.slice().parse())]
     ///     Integer(i64),
     ///

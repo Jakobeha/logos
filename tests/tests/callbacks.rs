@@ -145,10 +145,10 @@ mod any_token_callback {
     // Adaption of data test for (_) -> Token callbacks
     #[derive(Logos, Debug, PartialEq)]
     #[logos(skip r"[ \t\n\f]+")]
+    #[regex(r"[a-zA-Z]+", |_| Token::Text)]
+    #[regex(r"-?[0-9]+", |_| Token::Integer)]
+    #[regex(r"-?[0-9]+\.[0-9]+", |_| Token::Float)]
     enum Token {
-        #[regex(r"[a-zA-Z]+", |_| Token::Text)]
-        #[regex(r"-?[0-9]+", |_| Token::Integer)]
-        #[regex(r"-?[0-9]+\.[0-9]+", |_| Token::Float)]
         Text,
         Integer,
         Float,

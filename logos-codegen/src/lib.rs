@@ -27,11 +27,13 @@ use parser::{IgnoreFlags, Mode, Parser};
 use quote::ToTokens;
 use util::MaybeVoid;
 
-use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::parse_quote;
 use syn::spanned::Spanned;
 use syn::{Fields, ItemEnum};
+use crate::graph::NodeId;
+use crate::parser::{Definition, DefinitionType};
 
 const LOGOS_ATTR: &str = "logos";
 const ERROR_ATTR: &str = "error";
@@ -60,13 +62,17 @@ pub fn generate(input: TokenStream) -> TokenStream {
     let mut regex_ids = Vec::new();
     let mut graph = Graph::new();
 
+    debug!("Adding skips");
+
     {
         let errors = &mut parser.errors;
 
         for literal in &parser.skips {
             match literal.to_mir(&parser.subpatterns, IgnoreFlags::Empty, errors) {
                 Ok(mir) => {
-                    let then = graph.push(Leaf::new_skip(literal.span()).priority(mir.priority()));
+                    // TODO: Merge with agnostic definitions
+                    let then = graph.push(Leaf::new_agnostic(literal.span())
+                        .priority(mir.priority()));
                     let id = graph.regex(mir, then);
 
                     regex_ids.push(id);
@@ -76,6 +82,77 @@ pub fn generate(input: TokenStream) -> TokenStream {
                 }
             }
         }
+    }
+
+    fn add_definition<'t>(
+        parser: &mut Parser,
+        ropes: &mut Vec<Rope>,
+        regex_ids: &mut Vec<NodeId>,
+        graph: &mut Graph<Leaf<'t>>,
+        leaf: impl Fn(Span) -> Leaf<'t>,
+        definition: Definition
+    ) {
+        match definition.r#type {
+            DefinitionType::Token => {
+                if definition.ignore_flags.is_empty() {
+                    let bytes = definition.literal.to_bytes();
+                    let then = graph.push(
+                        leaf(definition.literal.span())
+                            .priority(definition.priority.unwrap_or(bytes.len() * 2))
+                            .callback(definition.callback),
+                    );
+
+                    ropes.push(Rope::new(bytes, then));
+                } else {
+                    let mir = definition
+                        .literal
+                        .escape_regex()
+                        .to_mir(
+                            &Default::default(),
+                            definition.ignore_flags,
+                            &mut parser.errors,
+                        )
+                        .expect("The literal should be perfectly valid regex");
+
+                    let then = graph.push(
+                        leaf(definition.literal.span())
+                            .priority(definition.priority.unwrap_or_else(|| mir.priority()))
+                            .callback(definition.callback),
+                    );
+                    let id = graph.regex(mir, then);
+
+                    regex_ids.push(id);
+                }
+            }
+            DefinitionType::Regex => {
+                let mir = match definition.literal.to_mir(
+                    &parser.subpatterns,
+                    definition.ignore_flags,
+                    &mut parser.errors,
+                ) {
+                    Ok(mir) => mir,
+                    Err(err) => {
+                        parser.err(err, definition.literal.span());
+                        return;
+                    }
+                };
+
+                let then = graph.push(
+                    leaf(definition.literal.span())
+                        .priority(definition.priority.unwrap_or_else(|| mir.priority()))
+                        .callback(definition.callback),
+                );
+                let id = graph.regex(mir, then);
+
+                regex_ids.push(id);
+            }
+        }
+    }
+
+    debug!("Adding agnostic definitions");
+
+    for definition in std::mem::take(&mut parser.agnostic_definitions) {
+        add_definition(&mut parser, &mut ropes, &mut regex_ids, &mut graph, Leaf::new_agnostic, definition)
     }
 
     debug!("Iterating through enum variants");
@@ -115,93 +192,8 @@ pub fn generate(input: TokenStream) -> TokenStream {
         let leaf = move |span| Leaf::new(var_ident, span).field(field.clone());
 
         for attr in &mut variant.attrs {
-            let attr_name = match attr.path().get_ident() {
-                Some(ident) => ident.to_string(),
-                None => continue,
-            };
-
-            match attr_name.as_str() {
-                ERROR_ATTR => {
-                    // TODO: Remove in future versions
-                    parser.err(
-                        "\
-                        Since 0.13 Logos no longer requires the #[error] variant.\n\
-                        \n\
-                        For help with migration see release notes: \
-                        https://github.com/maciejhirsz/logos/releases\
-                        ",
-                        attr.span(),
-                    );
-                }
-                TOKEN_ATTR => {
-                    let definition = match parser.parse_definition(attr) {
-                        Some(definition) => definition,
-                        None => {
-                            parser.err("Expected #[token(...)]", attr.span());
-                            continue;
-                        }
-                    };
-
-                    if definition.ignore_flags.is_empty() {
-                        let bytes = definition.literal.to_bytes();
-                        let then = graph.push(
-                            leaf(definition.literal.span())
-                                .priority(definition.priority.unwrap_or(bytes.len() * 2))
-                                .callback(definition.callback),
-                        );
-
-                        ropes.push(Rope::new(bytes, then));
-                    } else {
-                        let mir = definition
-                            .literal
-                            .escape_regex()
-                            .to_mir(
-                                &Default::default(),
-                                definition.ignore_flags,
-                                &mut parser.errors,
-                            )
-                            .expect("The literal should be perfectly valid regex");
-
-                        let then = graph.push(
-                            leaf(definition.literal.span())
-                                .priority(definition.priority.unwrap_or_else(|| mir.priority()))
-                                .callback(definition.callback),
-                        );
-                        let id = graph.regex(mir, then);
-
-                        regex_ids.push(id);
-                    }
-                }
-                REGEX_ATTR => {
-                    let definition = match parser.parse_definition(attr) {
-                        Some(definition) => definition,
-                        None => {
-                            parser.err("Expected #[regex(...)]", attr.span());
-                            continue;
-                        }
-                    };
-                    let mir = match definition.literal.to_mir(
-                        &parser.subpatterns,
-                        definition.ignore_flags,
-                        &mut parser.errors,
-                    ) {
-                        Ok(mir) => mir,
-                        Err(err) => {
-                            parser.err(err, definition.literal.span());
-                            continue;
-                        }
-                    };
-
-                    let then = graph.push(
-                        leaf(definition.literal.span())
-                            .priority(definition.priority.unwrap_or_else(|| mir.priority()))
-                            .callback(definition.callback),
-                    );
-                    let id = graph.regex(mir, then);
-
-                    regex_ids.push(id);
-                }
-                _ => (),
+            if let Some(definition) = parser.parse_definition(attr) {
+                add_definition(&mut parser, &mut ropes, &mut regex_ids, &mut graph, &leaf, definition);
             }
         }
     }
@@ -301,7 +293,7 @@ pub fn generate(input: TokenStream) -> TokenStream {
 
     let body = generator.generate();
     impl_logos(quote! {
-        use #logos_path::internal::{LexerInternal, CallbackResult};
+        use #logos_path::internal::{LexerInternal, CallbackResult, Agnostic};
 
         type Lexer<'s> = #logos_path::Lexer<'s, #this>;
 

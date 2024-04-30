@@ -14,9 +14,10 @@ impl<'a> Generator<'a> {
         let this = self.this;
         let ty = &leaf.field;
 
-        let constructor = match leaf.field {
-            MaybeVoid::Some(_) => quote!(#name::#ident),
-            MaybeVoid::Void => quote!(|()| #name::#ident),
+        let constructor = match (ident.as_ref(), ty) {
+            (Some(ident), MaybeVoid::Some(_)) => quote!(#name::#ident),
+            (Some(ident), MaybeVoid::Void) => quote!(|()| #name::#ident),
+            (None, _) => quote!(|never: Agnostic| match never {}),
         };
 
         match &leaf.callback {
@@ -39,14 +40,12 @@ impl<'a> Generator<'a> {
                     callback(lex).construct(#constructor, lex);
                 }
             }
-            Some(Callback::Skip(_)) => {
-                quote! {
-                    #bump
+            None if ident.is_none() => quote! {
+                #bump
 
-                    lex.trivia();
-                    #name::lex(lex);
-                }
-            }
+                lex.trivia();
+                #name::lex(lex);
+            },
             None if matches!(leaf.field, MaybeVoid::Void) => quote! {
                 #bump
                 lex.set(Ok(#name::#ident));

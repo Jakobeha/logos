@@ -2,6 +2,7 @@ use std::cmp::{Ord, Ordering};
 use std::fmt::{self, Debug, Display};
 
 use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use syn::{spanned::Spanned, Ident};
 
 use crate::graph::{Disambiguate, Node};
@@ -20,7 +21,6 @@ pub struct Leaf<'t> {
 pub enum Callback {
     Label(TokenStream),
     Inline(Box<InlineCallback>),
-    Skip(Span),
 }
 
 #[derive(Clone)]
@@ -41,7 +41,6 @@ impl Callback {
         match self {
             Callback::Label(tokens) => tokens.span(),
             Callback::Inline(inline) => inline.span,
-            Callback::Skip(span) => *span,
         }
     }
 }
@@ -57,13 +56,13 @@ impl<'t> Leaf<'t> {
         }
     }
 
-    pub fn new_skip(span: Span) -> Self {
+    pub fn new_agnostic(span: Span) -> Self {
         Leaf {
             ident: None,
             span,
             priority: 0,
-            field: MaybeVoid::Void,
-            callback: Some(Callback::Skip(span)),
+            field: MaybeVoid::Some(quote!(Agnostic)),
+            callback: None,
         }
     }
 
@@ -102,7 +101,6 @@ impl Debug for Leaf<'_> {
         match self.callback {
             Some(Callback::Label(ref label)) => write!(f, " ({})", label),
             Some(Callback::Inline(_)) => f.write_str(" (<inline>)"),
-            Some(Callback::Skip(_)) => f.write_str(" (<skip>)"),
             None => Ok(()),
         }
     }

@@ -10,10 +10,16 @@ use crate::parser::{IgnoreFlags, Parser, Subpatterns};
 use super::ignore_flags::ascii_case::MakeAsciiCaseInsensitive;
 
 pub struct Definition {
+    pub r#type: DefinitionType,
     pub literal: Literal,
     pub priority: Option<usize>,
     pub callback: Option<Callback>,
     pub ignore_flags: IgnoreFlags,
+}
+
+pub enum DefinitionType {
+    Token,
+    Regex
 }
 
 pub enum Literal {
@@ -22,8 +28,9 @@ pub enum Literal {
 }
 
 impl Definition {
-    pub fn new(literal: Literal) -> Self {
+    pub fn new(r#type: DefinitionType, literal: Literal) -> Self {
         Definition {
+            r#type,
             literal,
             priority: None,
             callback: None,

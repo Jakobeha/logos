@@ -20,7 +20,8 @@ fn mega(lex: &mut Lexer<Token>) -> Option<u64> {
 }
 
 #[derive(Logos, Debug, PartialEq)]
-#[logos(skip r"[ \t\n\f]+")]
+// logos::skip is a built-in callback that returns `Skip`, causing the lexer to skip the matched input
+#[regex(r"[ \t\n\f]+")]
 enum Token {
     // Callbacks can use closure syntax, or refer
     // to a function defined elsewhere.
@@ -50,17 +51,24 @@ fn main() {
 
 Logos can handle callbacks with following return types:
 
-| Return type                                                                       | Produces                                                                                            |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `()`                                                                              | `Ok(Token::Unit)`                                                                                   |
-| `bool`                                                                            | `Ok(Token::Unit)` **or** `Err(<Token as Logos>::Error::default())`                                  |
-| `Result<(), E>`                                                                   | `Ok(Token::Unit)` **or** `Err(<Token as Logos>::Error::from(err))`                                  |
-| `T`                                                                               | `Ok(Token::Value(T))`                                                                               |
-| `Option<T>`                                                                       | `Ok(Token::Value(T))` **or** `Err(<Token as Logos>::Error::default())`                              |
-| `Result<T, E>`                                                                    | `Ok(Token::Value(T))` **or** `Err(<Token as Logos>::Error::from(err))`                              |
-| [`Skip`](https://docs.rs/logos/latest/logos/struct.Skip.html)                     | _skips matched input_                                                                               |
-| [`Filter<T>`](https://docs.rs/logos/latest/logos/enum.Filter.html)                | `Ok(Token::Value(T))` **or** _skips matched input_                                                  |
-| [`FilterResult<T, E>`](https://docs.rs/logos/latest/logos/enum.FilterResult.html) | `Ok(Token::Value(T))` **or** `Err(<Token as Logos>::Error::from(err))` **or** _skips matched input_ |
+| Return type                                                                           | Agnostic | Produces                                                                                            |
+|---------------------------------------------------------------------------------------|----------|-----------------------------------------------------------------------------------------------------|
+| `()`                                                                                  | No       | `Ok(Token::Unit)`                                                                                   |
+| `bool`                                                                                | No       | `Ok(Token::Unit)` **or** `Err(<Token as Logos>::Error::default())`                                  |
+| `Result<(), E>`                                                                       | No       | `Ok(Token::Unit)` **or** `Err(<Token as Logos>::Error::from(err))`                                  |
+| `T`                                                                                   | No       | `Ok(Token::Value(T))`                                                                               |
+| `Option<T>`                                                                           | No       | `Ok(Token::Value(T))` **or** `Err(<Token as Logos>::Error::default())`                              |
+| `Result<T, E>`                                                                        | No       | `Ok(Token::Value(T))` **or** `Err(<Token as Logos>::Error::from(err))`                              |
+| [`Filter<T>`](https://docs.rs/logos/latest/logos/enum.Filter.html)                    | No       | `Ok(Token::Value(T))` **or** _skips matched input_                                                  |
+| [`FilterResult<T, E>`](https://docs.rs/logos/latest/logos/enum.FilterResult.html)     | No       | `Ok(Token::Value(T))` **or** `Err(<Token as Logos>::Error::from(err))` **or** _skips matched input_ |
+| [`Skip`](https://docs.rs/logos/latest/logos/struct.Skip.html)                         | **Yes**  | _skips matched input_                                                                               |
+| [`FilterSkip<E>`](https://docs.rs/logos/latest/logos/enum.FilterSkip.html)            | **Yes**  | `Err(<Token as Logos>::Error::from(err))` **or** _skips matched input_                              |
+| `Token`                                                                               | **Yes**  | `Ok(Token)`                                                                                         |
+| `Result<Token, E>`                                                                    | **Yes**  | `Ok(Token)` **or** `Err(<Token as Logos>::Error::default())`                                        |
+| [`Filter<Token>`](https://docs.rs/logos/latest/logos/enum.Filter.html)                | **Yes**  | `Ok(Token)` **or** _skips matched input_                                                            |
+| [`FilterResult<Token, E>`](https://docs.rs/logos/latest/logos/enum.FilterResult.html) | **Yes**  | `Ok(Token)` **or** `Err(<Token as Logos>::Error::from(err))` **or** _skips matched input_           |
+
+Patterns with **agnostic** callbacks _must_ be placed before the enum declaration within a `#[logos(...)]` annotation. Patterns without agnostic callbacks must be placed before the variant they are associated with.
 
 Callbacks can be also used to do perform more specialized lexing in place
 where regular expressions are too limiting. For specifics look at

@@ -20,17 +20,17 @@ fn byte_size_4(lexer: &mut Lexer<Token>) {
 
 #[derive(Logos, Debug, Clone, Copy, PartialEq)]
 #[logos(extras = MockExtras)]
+#[token("\n", |lex| {
+    lex.extras.line_breaks += 1;
+
+    logos::Skip
+})]
+#[regex(r"[ \t\f]", |lex| {
+    lex.extras.spaces += 1;
+
+    logos::Skip
+})]
 enum Token {
-    #[token("\n", |lex| {
-        lex.extras.line_breaks += 1;
-
-        logos::Skip
-    })]
-    #[regex(r"[ \t\f]", |lex| {
-        lex.extras.spaces += 1;
-
-        logos::Skip
-    })]
     #[regex("[a-zA-Z$_][a-zA-Z0-9$_]*")]
     Identifier,
 

@@ -3,7 +3,7 @@ use logos_derive::Logos;
 
 #[derive(Debug, Clone, Copy, PartialEq, Logos)]
 pub enum Token {
-    #[regex(r"[ \n\t\f]", logos::skip)]
+    #[regex(r"[ \n\t\f]")]
     InvalidToken,
 
     #[regex("[a-zA-Z_$][a-zA-Z0-9_$]*")]

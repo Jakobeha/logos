@@ -7,8 +7,9 @@ names.
   attached to the `enum` of your token definition. It allows you to define the
   `Extras` associated type in order to put custom state into the `Lexer`, or
   declare concrete types for generic type parameters, if your `enum` uses such.
-  It is strictly optional. It also allows to define parts that must be skipped
-  by the lexer, the error type, or regex subpatterns.
+  It is strictly optional. It also allows to define patterns which aren't
+  associated with any tokens such as those that must be skipped by the lexer,
+  the error type, or regex subpatterns.
 + And most importantly the
   [`#[token]` and `#[regex]`](./attributes/token_and_regex.md)
   attributes. Those allow you to define patterns to match against the input,

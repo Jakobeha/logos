@@ -1,5 +1,5 @@
 use crate::source::Chunk;
-use crate::{Filter, FilterResult, Lexer, Logos, Skip};
+use crate::{Filter, FilterResult, FilterSkip, Lexer, Logos, Skip};
 
 /// Trait used by the functions contained in the `Lexicon`.
 ///
@@ -48,6 +48,9 @@ pub trait CallbackResult<'s, P, T: Logos<'s>> {
     where
         Constructor: Fn(P) -> T;
 }
+
+/// Never-type representing the variant member of a callback that is not specific to any variant.
+pub enum Agnostic {}
 
 impl<'s, P, T: Logos<'s>> CallbackResult<'s, P, T> for P {
     #[inline]
@@ -101,11 +104,11 @@ where
     }
 }
 
-impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for Skip {
+impl<'s, T: Logos<'s>> CallbackResult<'s, Agnostic, T> for Skip {
     #[inline]
     fn construct<Constructor>(self, _: Constructor, lex: &mut Lexer<'s, T>)
     where
-        Constructor: Fn(()) -> T,
+        Constructor: Fn(Agnostic) -> T,
     {
         lex.trivia();
         T::lex(lex);
@@ -124,6 +127,24 @@ impl<'s, P, T: Logos<'s>> CallbackResult<'s, P, T> for Filter<P> {
                 lex.trivia();
                 T::lex(lex);
             }
+        }
+    }
+}
+
+impl<'s, E, T: Logos<'s>> CallbackResult<'s, Agnostic, T> for FilterSkip<E>
+    where
+        E: Into<T::Error>,
+{
+    fn construct<Constructor>(self, _: Constructor, lex: &mut Lexer<'s, T>)
+        where
+            Constructor: Fn(Agnostic) -> T,
+    {
+        match self {
+            FilterSkip::Skip => {
+                lex.trivia();
+                T::lex(lex);
+            }
+            FilterSkip::Error(err) => lex.set(Err(err.into())),
         }
     }
 }
@@ -147,21 +168,21 @@ where
     }
 }
 
-impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for T {
+impl<'s, T: Logos<'s>> CallbackResult<'s, Agnostic, T> for T {
     #[inline]
     fn construct<Constructor>(self, _: Constructor, lex: &mut Lexer<'s, T>)
     where
-        Constructor: Fn(()) -> T,
+        Constructor: Fn(Agnostic) -> T,
     {
         lex.set(Ok(self))
     }
 }
 
-impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for Result<T, T::Error> {
+impl<'s, T: Logos<'s>> CallbackResult<'s, Agnostic, T> for Result<T, T::Error> {
     #[inline]
     fn construct<Constructor>(self, _: Constructor, lex: &mut Lexer<'s, T>)
     where
-        Constructor: Fn(()) -> T,
+        Constructor: Fn(Agnostic) -> T,
     {
         match self {
             Ok(product) => lex.set(Ok(product)),
@@ -170,11 +191,11 @@ impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for Result<T, T::Error> {
     }
 }
 
-impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for Filter<T> {
+impl<'s, T: Logos<'s>> CallbackResult<'s, Agnostic, T> for Filter<T> {
     #[inline]
     fn construct<Constructor>(self, _: Constructor, lex: &mut Lexer<'s, T>)
     where
-        Constructor: Fn(()) -> T,
+        Constructor: Fn(Agnostic) -> T,
     {
         match self {
             Filter::Emit(product) => lex.set(Ok(product)),
@@ -186,10 +207,10 @@ impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for Filter<T> {
     }
 }
 
-impl<'s, T: Logos<'s>> CallbackResult<'s, (), T> for FilterResult<T, T::Error> {
+impl<'s, T: Logos<'s>> CallbackResult<'s, Agnostic, T> for FilterResult<T, T::Error> {
     fn construct<Constructor>(self, _: Constructor, lex: &mut Lexer<'s, T>)
     where
-        Constructor: Fn(()) -> T,
+        Constructor: Fn(Agnostic) -> T,
     {
         match self {
             FilterResult::Emit(product) => lex.set(Ok(product)),

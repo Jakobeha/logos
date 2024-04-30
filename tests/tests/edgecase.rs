@@ -493,12 +493,10 @@ mod merging_asymmetric_loops {
     #[test]
     fn must_compile() {
         #[derive(Logos)]
+        #[regex(r"/([^*]*[*]+[^*/])*([^*]*[*]+|[^*])*", priority = 3)]
         pub enum Token2 {
             #[regex(r#"[!#$%&*+-./<=>?@\\^|~:]+"#)]
             Operator,
-
-            #[regex(r"/([^*]*[*]+[^*/])*([^*]*[*]+|[^*])*", logos::skip, priority = 3)]
-            Ignored,
         }
     }
 }

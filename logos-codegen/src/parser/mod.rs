@@ -7,7 +7,7 @@ use syn::{Attribute, GenericParam, Lit, Meta, Type};
 use crate::error::Errors;
 use crate::leaf::{Callback, InlineCallback};
 use crate::util::{expect_punct, MaybeVoid};
-use crate::LOGOS_ATTR;
+use crate::{LOGOS_ATTR, ERROR_ATTR, TOKEN_ATTR, REGEX_ATTR};
 
 mod definition;
 mod ignore_flags;
@@ -15,7 +15,7 @@ mod nested;
 mod subpattern;
 mod type_params;
 
-pub use self::definition::{Definition, Literal};
+pub use self::definition::{Definition, DefinitionType, Literal};
 pub use self::ignore_flags::IgnoreFlags;
 use self::nested::{AttributeParser, Nested, NestedValue};
 pub use self::subpattern::Subpatterns;
@@ -27,6 +27,7 @@ pub struct Parser {
     pub mode: Mode,
     pub source: Option<TokenStream>,
     pub skips: Vec<Literal>,
+    pub agnostic_definitions: Vec<Definition>,
     pub extras: MaybeVoid,
     pub error_type: MaybeVoid,
     pub subpatterns: Subpatterns,
@@ -71,13 +72,17 @@ impl Parser {
         }
     }
 
-    /// Try to parse the main `#[logos(...)]`, does nothing if
-    /// the attribute's name isn't `logos`.
+    /// Try to parse `#[logos]` annotations as well as agnostic `#[token]` and `#[regex]` ones.
+    /// Does nothing if the attribute's name isn't `logos`, `token`, or `regex`.
     pub fn try_parse_logos(&mut self, attr: &mut Attribute) {
-        if !attr.path().is_ident(LOGOS_ATTR) {
-            return;
+        if attr.path().is_ident(LOGOS_ATTR) {
+            self.parse_logos(attr);
+        } else if let Some(definition) = self.parse_definition(attr) {
+            self.agnostic_definitions.push(definition);
         }
+    }
 
+    fn parse_logos(&mut self, attr: &mut Attribute) {
         let nested = match self.parse_attr(attr) {
             Some(tokens) => tokens,
             None => {
@@ -212,9 +217,29 @@ impl Parser {
     ///
     /// + `#[token(literal[, callback])]`
     /// + `#[regex(literal[, callback])]`
+    ///
+    /// Returns `None` for all other attributes.
     pub fn parse_definition(&mut self, attr: &mut Attribute) -> Option<Definition> {
-        let mut nested = self.parse_attr(attr)?;
+        let r#type = match attr.path().get_ident()?.to_string().as_str() {
+            ERROR_ATTR => {
+                // TODO: Remove in future versions
+                self.err(
+                    "\
+                        Since 0.13 Logos no longer requires the #[error] variant.\n\
+                        \n\
+                        For help with migration see release notes: \
+                        https://github.com/maciejhirsz/logos/releases\
+                        ",
+                    attr.span(),
+                );
+                return None
+            }
+            TOKEN_ATTR => DefinitionType::Token,
+            REGEX_ATTR => DefinitionType::Regex,
+            _ => return None,
+        };
 
+        let mut nested = self.parse_attr(attr)?;
         let literal = match nested.parsed::<Lit>()? {
             Ok(lit) => self.parse_literal(lit)?,
             Err(err) => {
@@ -224,7 +249,7 @@ impl Parser {
             }
         };
 
-        let mut def = Definition::new(literal);
+        let mut def = Definition::new(r#type, literal);
 
         for (position, next) in nested.enumerate() {
             match next {
