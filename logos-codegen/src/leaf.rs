@@ -110,7 +110,7 @@ impl Display for Leaf<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.ident {
             Some(ident) => Display::fmt(ident, f),
-            None => f.write_str("<skip>"),
+            None => f.write_str("<agnostic>"),
         }
     }
 }
